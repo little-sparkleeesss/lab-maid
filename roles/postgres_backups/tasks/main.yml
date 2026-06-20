@@ -98,16 +98,17 @@
       ansible.builtin.shell: |
         set -o pipefail
         rsync -azP \
-          -e "ssh -p {{ postgres_backups_nas_port | quote }} \
-            {% if postgres_backups_nas_private_key | length > 0 %}\
-            -i {{ postgres_backups_nas_private_key | quote }} \
-            {% endif %}\
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile=/tmp/pg_nas_known_hosts" \
-          "/tmp/pg_nas_stage/{{ _pg_backup_file | basename | quote }}" \
-          "{{ postgres_backups_nas_user | quote }}@\
-          {{ postgres_backups_nas_host | quote }}:\
-          {{ postgres_backups_nas_remote_dir | quote }}/"
+          -e {{ _nas_ssh_cmd | quote }} \
+          {{ _nas_src | quote }} \
+          {{ _nas_dst | quote }}
+      vars:
+        _nas_ssh_cmd: >-
+          ssh -p {{ postgres_backups_nas_port }}
+          {%- if postgres_backups_nas_private_key | length > 0 %} -i {{ postgres_backups_nas_private_key }}{% endif %}
+          -o StrictHostKeyChecking=yes
+          -o UserKnownHostsFile=/tmp/pg_nas_known_hosts
+        _nas_src: "/tmp/pg_nas_stage/{{ _pg_backup_file | basename }}"
+        _nas_dst: "{{ postgres_backups_nas_user }}@{{ postgres_backups_nas_host }}:{{ postgres_backups_nas_remote_dir }}/"
       delegate_to: localhost
       register: _pg_nas_push
       changed_when: true
