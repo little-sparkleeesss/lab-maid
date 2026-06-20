@@ -1,5 +1,161 @@
 ---
-# TODO — 待实现
-- name: 占位任务
+# PostgreSQL 备份 — pg_dumpall + zstd 压缩
+
+- name: 验证必需配置
+  ansible.builtin.assert:
+    that:
+      - postgres_backups_user | length > 0
+    fail_msg: "postgres_backups_user 必须设置"
+
+- name: 确保备份目录存在
+  ansible.builtin.file:
+    path: "{{ postgres_backups_local_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: 检查必要工具
+  ansible.builtin.command: "{{ item }} --version"
+  loop:
+    - pg_dumpall
+    - zstd
+  register: _pg_tool_check
+  changed_when: false
+  failed_when:
+    - _pg_tool_check.rc != 0
+    - _pg_tool_check.rc != 1
+  # pg_dumpall --version 返回 1（已知行为），zstd 返回 0
+
+- name: 生成备份时间戳
+  ansible.builtin.set_fact:
+    _pg_backup_ts: "{{ _d ~ '_' ~ _t }}"
+  vars:
+    _d: "{{ ansible_date_time.date | replace('-', '') }}"
+    _t: "{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+
+- name: 生成备份文件名
+  ansible.builtin.set_fact:
+    _pg_backup_file: "{{ _dir ~ '/' ~ _pfx ~ '_' ~ _pg_backup_ts ~ '.sql.zst' }}"
+  vars:
+    _dir: "{{ postgres_backups_local_dir }}"
+    _pfx: "{{ postgres_backups_prefix }}"
+
+- name: 执行 pg_dumpall 备份
+  ansible.builtin.shell: |
+    set -o pipefail
+    pg_dumpall \
+      -h "{{ postgres_backups_host | default('') or ansible_host }}" \
+      -p "{{ postgres_backups_port }}" \
+      -U "{{ postgres_backups_user }}" \
+      --no-password \
+      | zstd -v -T0 --ultra -{{ postgres_backups_compression_level }} \
+        -o "{{ _pg_backup_file }}"
+  environment:
+    PGPASSWORD: "{{ postgres_backups_password }}"
+    PGSSLMODE: "{{ 'verify-full' if postgres_backups_ssl_enabled else 'prefer' }}"
+    PGSSLROOTCERT: "{{ postgres_backups_ssl_ca | default('') }}"
+    PGSSLCERT: "{{ postgres_backups_ssl_cert | default('') }}"
+    PGSSLKEY: "{{ postgres_backups_ssl_key | default('') }}"
+  register: _pg_backup_result
+  changed_when: true
+
+- name: 获取备份文件大小
+  ansible.builtin.stat:
+    path: "{{ _pg_backup_file }}"
+  register: _pg_backup_stat
+
+# --- NAS 推送（匹配原始 Python Paramiko SFTP 行为） ---
+
+- name: 推送备份到 NAS
+  when: postgres_backups_nas_enabled | default(false)
+  block:
+    - name: 验证 NAS 配置完整性与安全性
+      ansible.builtin.assert:
+        that:
+          - postgres_backups_nas_host | length > 0
+          - postgres_backups_nas_user | length > 0
+          - postgres_backups_nas_remote_dir | length > 0
+          - postgres_backups_nas_host_key | length > 0
+          - postgres_backups_nas_port is number
+          - postgres_backups_nas_port | int > 0
+          - postgres_backups_nas_port | int < 65536
+          - postgres_backups_nas_host is match('^[a-zA-Z0-9][a-zA-Z0-9.-]+$')
+        fail_msg: "NAS 推送已启用但 postgres_backups_nas_* 配置不完整或格式错误"
+
+    - name: 拉取备份文件到控制器暂存
+      ansible.builtin.fetch:
+        src: "{{ _pg_backup_file }}"
+        dest: "/tmp/pg_nas_stage/"
+        flat: true
+
+    - name: 创建 NAS 主机密钥文件
+      ansible.builtin.copy:
+        content: "{{ postgres_backups_nas_host_key }}\n"
+        dest: /tmp/pg_nas_known_hosts
+        mode: "0600"
+      delegate_to: localhost
+
+    - name: 推送至 NAS
+      ansible.builtin.shell: |
+        set -o pipefail
+        rsync -azP \
+          -e "ssh -p {{ postgres_backups_nas_port | quote }} \
+            {% if postgres_backups_nas_private_key | length > 0 %}\
+            -i {{ postgres_backups_nas_private_key | quote }} \
+            {% endif %}\
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=/tmp/pg_nas_known_hosts" \
+          "/tmp/pg_nas_stage/{{ _pg_backup_file | basename | quote }}" \
+          "{{ postgres_backups_nas_user | quote }}@\
+          {{ postgres_backups_nas_host | quote }}:\
+          {{ postgres_backups_nas_remote_dir | quote }}/"
+      delegate_to: localhost
+      register: _pg_nas_push
+      changed_when: true
+
+    - name: 清理控制器暂存文件
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/pg_nas_stage
+        - /tmp/pg_nas_known_hosts
+      delegate_to: localhost
+
+    - name: 删除目标主机的本地备份（已推送至 NAS）
+      ansible.builtin.file:
+        path: "{{ _pg_backup_file }}"
+        state: absent
+
+- name: 查找过期备份文件
+  ansible.builtin.find:
+    paths: "{{ postgres_backups_local_dir }}"
+    patterns: "{{ postgres_backups_prefix }}_*.sql.zst"
+    age: "{{ postgres_backups_retention_days }}d"
+    age_stamp: mtime
+    file_type: file
+  register: _pg_expired_files
+  changed_when: false
+
+- name: 检查过期备份数量安全性
+  ansible.builtin.assert:
+    that:
+      - _pg_expired_files.files | length <= postgres_backups_max_deletions
+    fail_msg: >
+      待删除备份数量 ({{ _pg_expired_files.files | length }})
+      超过安全上限 ({{ postgres_backups_max_deletions }})，拒绝执行。
+      请检查 retention_days 或手动清理。
+  when: _pg_expired_files.files | length > 0
+
+- name: 删除过期备份
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _pg_expired_files.files }}"
+  when: _pg_expired_files.files | length > 0
+
+- name: 打印备份摘要
   ansible.builtin.debug:
-    msg: "{{ role_name | default(role_path) }} 尚未实现"
+    msg:
+      - "备份文件: {{ _pg_backup_file }}"
+      - "备份大小: {{ (_pg_backup_stat.stat.size | default(0) | int / 1048576) | round(1) }} MiB"
+      - "已删除 {{ _pg_expired_files.files | length }} 个过期备份"

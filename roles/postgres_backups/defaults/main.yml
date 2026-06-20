@@ -1,8 +1,24 @@
 ---
 # PostgreSQL 备份角色默认值
-postgres_backups_databases: []
+postgres_backups_host: ""               # 留空使用 Unix socket，否则填 PG 主机
+postgres_backups_port: 5432
+postgres_backups_user: ""
+postgres_backups_password: ""           # 应来自 vault
+postgres_backups_ssl_enabled: false
+postgres_backups_ssl_ca: ""             # CA 证书路径（留空使用系统默认）
+postgres_backups_ssl_cert: ""           # mTLS 客户端证书（可选）
+postgres_backups_ssl_key: ""            # mTLS 客户端私钥（可选）
 postgres_backups_local_dir: /var/backups/postgres
+postgres_backups_compression_level: 19  # zstd --ultra 级别 (1-19)
+postgres_backups_prefix: "pg_full_backup"
 postgres_backups_retention_days: 30
-postgres_backups_compression: "zstd"
-postgres_backups_remote_enabled: false
-postgres_backups_remote_target: ""
+postgres_backups_max_deletions: 50      # 单次最大清理数，防止配置错误
+
+# NAS SFTP 推送（匹配原始 Python local_runner.py 行为）
+postgres_backups_nas_enabled: false
+postgres_backups_nas_host: ""
+postgres_backups_nas_port: 22
+postgres_backups_nas_user: ""
+postgres_backups_nas_remote_dir: ""
+postgres_backups_nas_private_key: ""       # 控制器上的 SSH 私钥路径
+postgres_backups_nas_host_key: ""          # known_hosts 格式的公钥行，防 MITM

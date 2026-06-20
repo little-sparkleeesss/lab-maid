@@ -1,5 +1,6 @@
 ---
-- name: TODO — 待实现
-  hosts: all
-  gather_facts: false
-  tasks: []
+- name: PostgreSQL 定期备份
+  hosts: db
+  gather_facts: true
+  roles:
+    - postgres_backups

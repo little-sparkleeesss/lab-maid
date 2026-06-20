@@ -22,9 +22,14 @@ smart_monitoring_temp_critical: 60
 smart_monitoring_attr_change_alert: true
 
 # -------------------- PostgreSQL 备份 --------------------
-postgres_backups_databases: []             # 数据库名列表，在 host_vars 中填写
+postgres_backups_user: ""                   # PG 用户，在 host_vars 中填写
+postgres_backups_password: ""               # 应来自 vault
+postgres_backups_host: ""                   # 留空使用本机 Unix socket
+postgres_backups_port: 5432
+postgres_backups_ssl_enabled: false
+postgres_backups_ssl_ca: ""
 postgres_backups_local_dir: /var/backups/postgres
+postgres_backups_compression_level: 19      # zstd --ultra (1-19)
+postgres_backups_prefix: "pg_full_backup"
 postgres_backups_retention_days: 30
-postgres_backups_compression: "zstd"
-postgres_backups_remote_enabled: false
-postgres_backups_remote_target: ""
+postgres_backups_max_deletions: 50          # 单次最大清理数
