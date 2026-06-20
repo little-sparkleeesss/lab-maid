@@ -1,5 +1,106 @@
 ---
-# TODO — 待实现
-- name: 占位任务
+# SMART 监控 — 数据采集 + PostgreSQL 入库
+# 架构：controller(localhost) 驱动，smartctl delegate 到目标主机，直接连接 PG
+
+- name: 验证必需配置
+  ansible.builtin.assert:
+    that:
+      - smart_monitoring_target | length > 0
+      - smart_monitoring_drives | length > 0
+      - smart_monitoring_pg_host | length > 0
+      - smart_monitoring_pg_user | length > 0
+    fail_msg: >
+      smart_monitoring_target / drives / pg_host / pg_user 必须设置
+
+- name: 检查目标主机 smartctl 可用
+  ansible.builtin.command: smartctl --version
+  delegate_to: "{{ smart_monitoring_target }}"
+  changed_when: false
+
+- name: 采集各磁盘 SMART 数据
+  ansible.builtin.command:
+    cmd: smartctl -a -j {{ item }}
+  delegate_to: "{{ smart_monitoring_target }}"
+  register: _smart_raw
+  loop: "{{ smart_monitoring_drives }}"
+  changed_when: false
+  failed_when:
+    - _smart_raw.rc != 0
+    - >-
+      'No such file' not in _smart_raw.stderr | default('')
+      and 'Permission denied' not in _smart_raw.stderr | default('')
+  timeout: "{{ smart_monitoring_command_timeout }}"
+
+- name: 解析 SMART JSON 数据
+  ansible.builtin.set_fact:
+    _smart_rows: >-
+      {%- set rows = [] -%}
+      {%- for r in _smart_raw.results -%}
+      {%-   if r.stdout | default('') | length > 0 -%}
+      {%-     set data = r.stdout | from_json -%}
+      {%-     set _ = rows.append({
+               'device': r.item,
+               'serial': data.get('serial_number', ''),
+               'model': data.get('model_name', ''),
+               'device_type': (data.get('device') or {}).get('type', 'unknown'),
+               'smart_status': (data.get('smart_status') or {}).get('passed'),
+               'raw_json': r.stdout
+             }) -%}
+      {%-   endif -%}
+      {%- endfor -%}
+      {{ rows }}
+
+- name: 确保 smart_stats 表存在
+  community.postgresql.postgresql_query:
+    login_host: "{{ smart_monitoring_pg_host }}"
+    login_port: "{{ smart_monitoring_pg_port }}"
+    login_db: "{{ smart_monitoring_pg_database }}"
+    login_user: "{{ smart_monitoring_pg_user }}"
+    login_password: "{{ smart_monitoring_pg_password }}"
+    query: >
+      CREATE TABLE IF NOT EXISTS {{ smart_monitoring_pg_table }} (
+        id SERIAL PRIMARY KEY,
+        collected_at TIMESTAMPTZ DEFAULT NOW(),
+        host TEXT NOT NULL,
+        device TEXT NOT NULL,
+        serial TEXT,
+        model TEXT,
+        device_type TEXT,
+        smart_status_passed BOOLEAN,
+        smartctl_json JSONB NOT NULL
+      );
+  delegate_to: localhost
+
+- name: 写入 SMART 数据
+  community.postgresql.postgresql_query:
+    login_host: "{{ smart_monitoring_pg_host }}"
+    login_port: "{{ smart_monitoring_pg_port }}"
+    login_db: "{{ smart_monitoring_pg_database }}"
+    login_user: "{{ smart_monitoring_pg_user }}"
+    login_password: "{{ smart_monitoring_pg_password }}"
+    query: >
+      INSERT INTO {{ smart_monitoring_pg_table }}
+        (host, device, serial, model, device_type, smart_status_passed, smartctl_json)
+      VALUES (
+        %(host)s, %(device)s, %(serial)s, %(model)s,
+        %(device_type)s, %(status)s, %(raw_json)s
+      );
+    positional_args:
+      - host: "{{ smart_monitoring_target }}"
+        device: "{{ item.device }}"
+        serial: "{{ item.serial }}"
+        model: "{{ item.model }}"
+        device_type: "{{ item.device_type }}"
+        status: "{{ item.smart_status }}"
+        raw_json: "{{ item.raw_json }}"
+  loop: "{{ _smart_rows }}"
+  delegate_to: localhost
+  register: _insert
+  changed_when: _insert.rowcount | default(0) > 0
+
+- name: 打印采集摘要
   ansible.builtin.debug:
-    msg: "{{ role_name | default(role_path) }} 尚未实现"
+    msg:
+      - "目标主机: {{ smart_monitoring_target }}"
+      - "已采集 {{ _smart_rows | length }} 块磁盘"
+      - "数据已写入 {{ smart_monitoring_pg_host }}:{{ smart_monitoring_pg_database }}.{{ smart_monitoring_pg_table }}"

@@ -4,12 +4,18 @@
 
 # ZFS 快照 — 此主机的 dataset 列表
 zfs_snapshots_datasets:
-  - tank/root
-  - tank/data
-  - tank/media
+  - name: tank/root
+    recursive: true
+  - name: tank/data
+    recursive: false
+  - name: tank/media
+    recursive: false
 
 # SMART 监控 — 此主机的磁盘列表
 smart_monitoring_drives:
   - /dev/sda
   - /dev/sdb
   - /dev/sdc
+
+# SMART 监控执行目标（PVE 主机本身）
+smart_monitoring_target: "pve-host"

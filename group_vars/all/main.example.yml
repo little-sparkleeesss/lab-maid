@@ -15,11 +15,16 @@ zfs_snapshots_retention_days: 30
 zfs_snapshots_max_deletions: 100            # 单次最大删除数，防止配置错误导致灾难
 
 # -------------------- SMART 监控 --------------------
-smart_monitoring_drives: []                # 磁盘路径，在 host_vars 中填写
-smart_monitoring_collect_interval_hours: 6
-smart_monitoring_temp_warning: 50
-smart_monitoring_temp_critical: 60
-smart_monitoring_attr_change_alert: true
+# drives 和 target 在 host_vars 中填写
+smart_monitoring_drives: []
+smart_monitoring_target: ""                # smartctl 执行目标（主机名）
+smart_monitoring_pg_host: ""               # PostgreSQL 主机
+smart_monitoring_pg_port: 5432
+smart_monitoring_pg_database: "monitor"
+smart_monitoring_pg_user: "monitor"
+smart_monitoring_pg_password: ""           # 应来自 vault
+smart_monitoring_pg_table: "smart_stats"
+smart_monitoring_command_timeout: 30       # smartctl 超时秒数
 
 # -------------------- PostgreSQL 备份 --------------------
 postgres_backups_user: ""                   # PG 用户，在 host_vars 中填写

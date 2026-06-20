@@ -1,7 +1,11 @@
 ---
 # SMART 监控角色默认值
-smart_monitoring_drives: []
-smart_monitoring_collect_interval_hours: 6
-smart_monitoring_temp_warning: 50
-smart_monitoring_temp_critical: 60
-smart_monitoring_attr_change_alert: true
+smart_monitoring_drives: []                # 磁盘设备路径，如 [/dev/sda, /dev/nvme0]
+smart_monitoring_target: ""                # smartctl 执行目标（PVE 主机），在 host_vars 中设
+smart_monitoring_pg_host: ""               # PostgreSQL 主机
+smart_monitoring_pg_port: 5432
+smart_monitoring_pg_database: "monitor"
+smart_monitoring_pg_user: "monitor"
+smart_monitoring_pg_password: ""           # 应来自 vault
+smart_monitoring_pg_table: "smart_stats"
+smart_monitoring_command_timeout: 30       # smartctl 超时（秒）
