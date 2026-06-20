@@ -1,0 +1,4 @@
+---
+# 外部依赖（当前仅需内置模块，无额外 collection）
+collections: []
+roles: []

@@ -1,0 +1,32 @@
+# Ansible
+*.retry
+
+# Vault 密码文件（绝对不能提交）
+.vault_pass
+vault-password.txt
+
+# 个人信息文件（从 .example 复制而来）
+inventory.yml
+host_vars/*.yml
+!host_vars/*.example.yml
+group_vars/all/main.yml
+group_vars/all/vault.yml
+
+# Ansible 工具链缓存
+.ansible/
+
+# uv / Python
+__pycache__/
+*.pyc
+.venv/
+.tox/
+uv.lock
+
+# 编辑器 & IDE
+.vscode/
+.idea/
+
+# 临时文件
+*.swp
+*~
+.DS_Store

@@ -1,0 +1,20 @@
+---
+# .ansible-lint
+
+profile: null
+
+exclude_paths:
+  - .github/
+  - tests/
+
+warn_list:
+  - role-name          # 允许 role 名包含下划线 (snake_case)
+  - experimental       # 允许实验性模块
+  - var-naming         # 关闭自动命名检查，遵循项目约定的 <role>_<what>_<modifier>
+
+skip_list:
+  - name[casing]       # task name 不强制大小写风格
+
+mock_modules:
+  - zfs
+  - community.general.zfs
