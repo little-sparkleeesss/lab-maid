@@ -1,0 +1,6 @@
+---
+- name: 流量数据同步
+  hosts: vps
+  gather_facts: true
+  roles:
+    - traffic_monitor

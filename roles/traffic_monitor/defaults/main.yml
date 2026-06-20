@@ -1,0 +1,19 @@
+---
+# 流量监控数据同步默认值
+traffic_monitor_source_host: ""            # vnstat 所在主机（inventory 名）
+traffic_monitor_source_path: /var/lib/vnstat/vnstat.db
+traffic_monitor_pg_host: ""
+traffic_monitor_pg_port: 5432
+traffic_monitor_pg_database: "monitor"
+traffic_monitor_pg_user: "monitor"
+traffic_monitor_pg_password: ""            # 应来自 vault
+traffic_monitor_pg_table: ""               # PG 目标表名
+traffic_monitor_sqlite_table: "hour"       # SQLite 源表名
+traffic_monitor_primary_key: "id"
+traffic_monitor_columns:                   # SQLite 列名列表
+  - id
+  - date
+  - rx
+  - tx
+traffic_monitor_column_mapping: {}         # SQLite→PG 列名映射，如 {date: "timestamp"}
+traffic_monitor_local_db: /tmp/vnstat.db   # 本地暂存路径

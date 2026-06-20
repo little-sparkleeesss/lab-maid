@@ -5,3 +5,6 @@
 # 如果 VPS 上也需要 SMART 监控
 # smart_monitoring_drives:
 #   - /dev/sda
+
+# 流量监控 — VPS 上的 vnstat SQLite 路径
+traffic_monitor_source_path: /var/lib/vnstat/vnstat.db

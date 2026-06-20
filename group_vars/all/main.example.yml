@@ -29,12 +29,15 @@ smart_monitoring_command_timeout: 30       # smartctl 超时秒数
 # -------------------- PostgreSQL 备份 --------------------
 postgres_backups_user: ""                   # PG 用户，在 host_vars 中填写
 postgres_backups_password: ""               # 应来自 vault
-postgres_backups_host: ""                   # 留空使用本机 Unix socket
+postgres_backups_host: ""                   # PG 主机（控制器通过网络连接）
 postgres_backups_port: 5432
 postgres_backups_ssl_enabled: false
 postgres_backups_ssl_ca: ""
 postgres_backups_local_dir: /var/backups/postgres
-postgres_backups_compression_level: 19      # zstd --ultra (1-19)
+postgres_backups_compression: "auto"        # auto | zstd | gzip | pigz | xz | none
+postgres_backups_zstd_level: 19             # zstd --ultra 级别 (1-22)
+postgres_backups_gzip_level: 9              # gzip/pigz 级别 (1-9)
+postgres_backups_xz_level: 9                # xz 级别 (0-9)
 postgres_backups_prefix: "pg_full_backup"
 postgres_backups_retention_days: 30
 postgres_backups_max_deletions: 50          # 单次最大清理数
@@ -55,3 +58,16 @@ pg_start_backup_password: ""               # 应来自 vault
 pg_start_backup_label: "scheduled_backup"
 pg_start_backup_delay_seconds: 600         # 备份窗口时长
 pg_start_backup_skip_vacuum: false
+
+# -------------------- 流量数据同步 --------------------
+traffic_monitor_source_path: /var/lib/vnstat/vnstat.db
+traffic_monitor_pg_host: ""
+traffic_monitor_pg_port: 5432
+traffic_monitor_pg_database: "monitor"
+traffic_monitor_pg_user: "monitor"
+traffic_monitor_pg_password: ""            # 应来自 vault
+traffic_monitor_pg_table: ""               # PG 目标表名
+traffic_monitor_sqlite_table: "hour"
+traffic_monitor_columns: [id, date, rx, tx]
+traffic_monitor_column_mapping:
+  date: "timestamp"

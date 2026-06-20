@@ -1,0 +1,132 @@
+---
+# 流量数据同步 — vnstat SQLite → PostgreSQL
+
+- name: 验证必需配置与安全性
+  ansible.builtin.assert:
+    that:
+      - traffic_monitor_source_path | length > 0
+      - traffic_monitor_pg_host | length > 0
+      - traffic_monitor_pg_table is match('^[a-zA-Z_][a-zA-Z0-9_.]*$')
+      - traffic_monitor_sqlite_table is match('^[a-zA-Z_][a-zA-Z0-9_]*$')
+      - >-
+        traffic_monitor_columns
+        | reject('match', '^[a-zA-Z_][a-zA-Z0-9_]*$')
+        | list | length == 0
+    fail_msg: >
+      pg_table / sqlite_table / columns 只能包含字母、数字和下划线
+
+- name: 从源主机拉取 vnstat.db
+  ansible.builtin.fetch:
+    src: "{{ traffic_monitor_source_path }}"
+    dest: "{{ traffic_monitor_local_db }}"
+    flat: true
+
+- name: 获取源主机时区偏移
+  ansible.builtin.command: date +%z
+  register: _tz_out
+  changed_when: false
+
+# --- localhost: 处理 SQLite + 同步到 PG ---
+
+- name: 查询 PG 最后同步状态
+  community.postgresql.postgresql_query:
+    login_host: "{{ traffic_monitor_pg_host }}"
+    login_port: "{{ traffic_monitor_pg_port }}"
+    login_db: "{{ traffic_monitor_pg_database }}"
+    login_user: "{{ traffic_monitor_pg_user }}"
+    login_password: "{{ traffic_monitor_pg_password }}"
+    query: >-
+      SELECT
+        COALESCE(MAX({{ _pk_col }}), 0) AS max_id,
+        MAX({{ _ts_col }}) AS last_ts
+      FROM {{ traffic_monitor_pg_table }}
+  vars:
+    _pk_col: "{{ traffic_monitor_column_mapping.id | default('id') }}"
+    _ts_col: "{{ traffic_monitor_column_mapping.date | default('timestamp') }}"
+  delegate_to: localhost
+  register: _pg_state
+
+- name: 同步增量数据到 PostgreSQL
+  ansible.builtin.shell: |
+    set -o pipefail
+    max_id={{ _pg_state.query_result[0].max_id | default(0) | int }}
+    last_ts='{{ _pg_state.query_result[0].last_ts | default("") }}'
+    tz_offset='{{ _tz_out.stdout | trim }}'
+
+    # 解析时区: +0800 → 8*3600 seconds
+    sign=1; tz=${tz_offset#[-+]}
+    [ "${tz_offset:0:1}" = "-" ] && sign=-1
+    tz_hrs=$(( 10#${tz:0:2} * 3600 * sign ))
+    tz_min=$(( 10#${tz:2:2} * 60 * sign ))
+    tz_sec=$(( tz_hrs + tz_min ))
+
+    # 计算过滤用的 cutoff epoch
+    cutoff_epoch=0
+    if [ -n "$last_ts" ] && [ "$last_ts" != "None" ]; then
+      cutoff_epoch=$(date -d "$last_ts" +%s 2>/dev/null || echo 0)
+    fi
+
+    # 如果 last_ts 为空但表已有数据，跳过全量同步（防重复）
+    if [ "$cutoff_epoch" = "0" ] && [ "$max_id" -gt 0 ]; then
+      echo "INFO: 跳过全量同步（表中已有 {{ _pg_state.query_result[0].max_id }} 条记录）" >&2
+      exit 0
+    fi
+
+    next_id=$(( max_id + 1 ))
+    count=0
+
+    sqlite3 -separator '|' \
+      "{{ traffic_monitor_local_db }}" \
+      "SELECT {{ traffic_monitor_columns | join(', ') }}
+       FROM {{ traffic_monitor_sqlite_table }}
+       ORDER BY date ASC" \
+      | while IFS='|' read -r id ts_str rx tx; do
+
+      [ -z "$ts_str" ] && continue
+
+      # 将 SQLite 的 date 字符串转为 epoch
+      row_epoch=$(date -d "$ts_str" +%s 2>/dev/null || echo 0)
+      [ "$row_epoch" = "0" ] && continue
+
+      # 跳过已同步的行
+      [ "$cutoff_epoch" -gt 0 ] && [ "$row_epoch" -le "$cutoff_epoch" ] && continue
+
+      # 转换为带时区的 timestamptz
+      local_epoch=$(( row_epoch - tz_sec ))
+      row_ts=$(date -u -d "@${local_epoch}" '+%Y-%m-%d %H:%M:%S+00' 2>/dev/null)
+
+      # 输出 INSERT，重编号 id
+      echo "INSERT INTO {{ traffic_monitor_pg_table }} ({{ _pg_cols }})"
+      echo "VALUES (${next_id}, '${row_ts}'::timestamptz, ${rx}, ${tx})"
+      echo "ON CONFLICT DO NOTHING;"
+
+      next_id=$(( next_id + 1 ))
+      count=$(( count + 1 ))
+    done | psql \
+      -h "{{ traffic_monitor_pg_host }}" \
+      -p "{{ traffic_monitor_pg_port }}" \
+      -U "{{ traffic_monitor_pg_user }}" \
+      -d "{{ traffic_monitor_pg_database }}" \
+      --no-password --single-transaction -q
+
+    echo "synced=${count}" >&2
+  environment:
+    PGPASSWORD: "{{ traffic_monitor_pg_password }}"
+  delegate_to: localhost
+  register: _traffic_sync
+  changed_when: "'synced=0' not in _traffic_sync.stderr"
+  vars:
+    _pg_cols: >-
+      {{ traffic_monitor_columns | map('extract', traffic_monitor_column_mapping) | map('default', item) | join(', ') }}
+
+- name: 清理本地暂存
+  ansible.builtin.file:
+    path: "{{ traffic_monitor_local_db }}"
+    state: absent
+  delegate_to: localhost
+
+- name: 打印同步摘要
+  ansible.builtin.debug:
+    msg:
+      - "源主机时区: {{ _tz_out.stdout }}"
+      - "同步目标: {{ traffic_monitor_pg_table }}"

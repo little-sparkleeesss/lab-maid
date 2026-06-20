@@ -26,6 +26,10 @@ uv.lock
 .vscode/
 .idea/
 
+# 预编译工具（静态二进制）
+assets/tools/*
+!assets/tools/.gitkeep
+
 # 临时文件
 *.swp
 *~

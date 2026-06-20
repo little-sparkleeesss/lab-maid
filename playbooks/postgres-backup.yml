@@ -1,6 +1,6 @@
 ---
-- name: PostgreSQL 定期备份
-  hosts: db
+- name: PostgreSQL 定期备份（在控制器上执行）
+  hosts: localhost
   gather_facts: true
   roles:
     - postgres_backups
