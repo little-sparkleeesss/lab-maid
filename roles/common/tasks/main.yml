@@ -1,0 +1,24 @@
+---
+# common 角色 — 可复用基础设施
+# 提供通知、日志、基础依赖等共享功能
+# 此角色不作为独立 task 序列执行，由其他角色通过 include_role 调用具体功能
+
+- name: 确保 lab-maid 配置目录存在
+  ansible.builtin.file:
+    path: "{{ common_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: 确保 lab-maid 日志目录存在
+  ansible.builtin.file:
+    path: "{{ common_log_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: 安装基础依赖包
+  ansible.builtin.package:
+    name:
+      - curl
+      - jq
+      - zstd
+    state: present

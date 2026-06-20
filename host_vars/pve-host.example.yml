@@ -1,0 +1,15 @@
+---
+# PVE 物理机配置示例
+# 复制为 pve-host.yml 并填入真实值
+
+# ZFS 快照 — 此主机的 dataset 列表
+zfs_snapshots_datasets:
+  - tank/root
+  - tank/data
+  - tank/media
+
+# SMART 监控 — 此主机的磁盘列表
+smart_monitoring_drives:
+  - /dev/sda
+  - /dev/sdb
+  - /dev/sdc

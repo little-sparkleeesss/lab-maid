@@ -1,0 +1,8 @@
+---
+# PostgreSQL 备份角色默认值
+postgres_backups_databases: []
+postgres_backups_local_dir: /var/backups/postgres
+postgres_backups_retention_days: 30
+postgres_backups_compression: "zstd"
+postgres_backups_remote_enabled: false
+postgres_backups_remote_target: ""

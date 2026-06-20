@@ -1,0 +1,7 @@
+---
+# VPS 配置示例
+# 复制为 vps.yml 并填入真实值
+
+# 如果 VPS 上也需要 SMART 监控
+# smart_monitoring_drives:
+#   - /dev/sda

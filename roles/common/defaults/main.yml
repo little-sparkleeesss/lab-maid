@@ -1,0 +1,5 @@
+---
+# common 角色默认值
+common_log_dir: /var/log/lab-maid
+common_config_dir: /etc/lab-maid
+common_retention_days_default: 30

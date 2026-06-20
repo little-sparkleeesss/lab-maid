@@ -1,0 +1,5 @@
+---
+# TODO — 待实现
+- name: 占位任务
+  ansible.builtin.debug:
+    msg: "{{ role_name | default(role_path) }} 尚未实现"

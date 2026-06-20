@@ -1,0 +1,28 @@
+---
+# Lab-Maid 主机清单示例
+# 复制为 inventory.yml 并填入真实信息
+
+all:
+  children:
+    pve:
+      hosts:
+        pve-host:
+          ansible_host: 192.168.1.10
+    pve_guests:
+      hosts:
+        vm-postgres:
+          ansible_host: 192.168.1.11
+        vm-app:
+          ansible_host: 192.168.1.12
+        vm-web:
+          ansible_host: 192.168.1.13
+        lxc-dns:
+          ansible_host: 192.168.1.14
+        lxc-proxy:
+          ansible_host: 192.168.1.15
+    vps:
+      hosts:
+        vps:
+          ansible_host: 1.2.3.4
+  vars:
+    ansible_user: your_ssh_user

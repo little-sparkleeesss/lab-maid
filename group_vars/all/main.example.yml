@@ -1,0 +1,31 @@
+---
+# 全局配置示例
+# 复制为 main.yml 并按需修改
+
+# -------------------- 通用设置 --------------------
+common_log_dir: /var/log/lab-maid
+common_config_dir: /etc/lab-maid
+common_retention_days_default: 30
+
+# -------------------- ZFS 快照 --------------------
+zfs_snapshots_datasets: []                 # 要快照的 dataset，在 host_vars 中填写
+zfs_snapshots_hourly_retention: 24
+zfs_snapshots_daily_retention: 7
+zfs_snapshots_weekly_retention: 4
+zfs_snapshots_monthly_retention: 3
+zfs_snapshots_prefix: "autosnap"
+
+# -------------------- SMART 监控 --------------------
+smart_monitoring_drives: []                # 磁盘路径，在 host_vars 中填写
+smart_monitoring_collect_interval_hours: 6
+smart_monitoring_temp_warning: 50
+smart_monitoring_temp_critical: 60
+smart_monitoring_attr_change_alert: true
+
+# -------------------- PostgreSQL 备份 --------------------
+postgres_backups_databases: []             # 数据库名列表，在 host_vars 中填写
+postgres_backups_local_dir: /var/backups/postgres
+postgres_backups_retention_days: 30
+postgres_backups_compression: "zstd"
+postgres_backups_remote_enabled: false
+postgres_backups_remote_target: ""
