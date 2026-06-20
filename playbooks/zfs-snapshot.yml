@@ -1,5 +1,6 @@
 ---
-- name: TODO — 待实现
-  hosts: all
-  gather_facts: false
-  tasks: []
+- name: ZFS 定期快照
+  hosts: pve
+  gather_facts: true
+  roles:
+    - zfs_snapshots

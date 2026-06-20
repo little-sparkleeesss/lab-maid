@@ -1,8 +1,5 @@
 ---
 # ZFS 快照角色默认值
 zfs_snapshots_datasets: []
-zfs_snapshots_hourly_retention: 24
-zfs_snapshots_daily_retention: 7
-zfs_snapshots_weekly_retention: 4
-zfs_snapshots_monthly_retention: 3
 zfs_snapshots_prefix: "autosnap"
+zfs_snapshots_retention_days: 30

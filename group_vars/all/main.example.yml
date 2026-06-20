@@ -8,12 +8,11 @@ common_config_dir: /etc/lab-maid
 common_retention_days_default: 30
 
 # -------------------- ZFS 快照 --------------------
-zfs_snapshots_datasets: []                 # 要快照的 dataset，在 host_vars 中填写
-zfs_snapshots_hourly_retention: 24
-zfs_snapshots_daily_retention: 7
-zfs_snapshots_weekly_retention: 4
-zfs_snapshots_monthly_retention: 3
+# dataset 列表在 host_vars 中填写，每项: {name: "tank/data", recursive: false}
+zfs_snapshots_datasets: []
 zfs_snapshots_prefix: "autosnap"
+zfs_snapshots_retention_days: 30
+zfs_snapshots_max_deletions: 100            # 单次最大删除数，防止配置错误导致灾难
 
 # -------------------- SMART 监控 --------------------
 smart_monitoring_drives: []                # 磁盘路径，在 host_vars 中填写
