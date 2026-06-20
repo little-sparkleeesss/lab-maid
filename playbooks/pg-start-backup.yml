@@ -1,0 +1,6 @@
+---
+- name: PostgreSQL 物理备份前置
+  hosts: db
+  gather_facts: true
+  roles:
+    - pg_start_backup

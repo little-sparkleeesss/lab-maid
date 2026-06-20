@@ -38,3 +38,20 @@ postgres_backups_compression_level: 19      # zstd --ultra (1-19)
 postgres_backups_prefix: "pg_full_backup"
 postgres_backups_retention_days: 30
 postgres_backups_max_deletions: 50          # 单次最大清理数
+# NAS 推送（可选）
+# postgres_backups_nas_enabled: true
+# postgres_backups_nas_host: ""
+# postgres_backups_nas_user: ""
+# postgres_backups_nas_remote_dir: ""
+# postgres_backups_nas_private_key: ""
+# postgres_backups_nas_host_key: ""
+
+# -------------------- PG 物理备份前置 --------------------
+pg_start_backup_host: ""                   # PG 主机
+pg_start_backup_port: 5432
+pg_start_backup_database: "postgres"
+pg_start_backup_user: ""
+pg_start_backup_password: ""               # 应来自 vault
+pg_start_backup_label: "scheduled_backup"
+pg_start_backup_delay_seconds: 600         # 备份窗口时长
+pg_start_backup_skip_vacuum: false

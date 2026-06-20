@@ -1,0 +1,8 @@
+---
+# 手动触发物理备份前置（可通过 --extra-vars 覆盖等待时长）
+# ansible-playbook playbooks/adhoc/start-backup.yml -e 'pg_start_backup_delay_seconds=1800'
+- name: PostgreSQL 手动备份前置
+  hosts: db
+  gather_facts: true
+  roles:
+    - pg_start_backup

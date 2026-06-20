@@ -1,0 +1,50 @@
+---
+# PostgreSQL 物理备份前置 — pg_backup_start / pg_backup_stop
+# 在单次 psql 会话中完成，确保备份模式与会话绑定
+
+- name: 验证必需配置与安全性
+  ansible.builtin.assert:
+    that:
+      - pg_start_backup_host | length > 0
+      - pg_start_backup_user | length > 0
+      - pg_start_backup_label is match('^[a-zA-Z_][a-zA-Z0-9_]*$')
+      - pg_start_backup_delay_seconds | int > 0
+    fail_msg: >
+      pg_start_backup_host / user 必须设置，
+      label 只能包含字母数字和下划线，
+      delay_seconds 必须大于 0
+
+- name: 检查 psql 可用
+  ansible.builtin.command: psql --version
+  changed_when: false
+
+- name: 执行备份前置流程（单会话）
+  ansible.builtin.shell: |
+    set -o pipefail
+    printf '%s\n' \
+      {% if not (pg_start_backup_skip_vacuum | default(false)) %}'VACUUM ANALYZE;' \
+      {% endif %}"SELECT * FROM pg_backup_start('{{ pg_start_backup_label }}', true);" \
+      'SELECT pg_sleep({{ pg_start_backup_delay_seconds }});' \
+      'SELECT * FROM pg_backup_stop();' \
+      | psql \
+        -h "{{ pg_start_backup_host }}" \
+        -p "{{ pg_start_backup_port }}" \
+        -U "{{ pg_start_backup_user }}" \
+        -d "{{ pg_start_backup_database }}" \
+        -X -q -t
+  environment:
+    PGPASSWORD: "{{ pg_start_backup_password }}"
+    PGSSLMODE: "{{ 'verify-full' if pg_start_backup_ssl_enabled else 'prefer' }}"
+    PGSSLROOTCERT: "{{ pg_start_backup_ssl_ca | default('') }}"
+    PGSSLCERT: "{{ pg_start_backup_mtls_cert | default('') }}"
+    PGSSLKEY: "{{ pg_start_backup_mtls_key | default('') }}"
+  register: _pg_start_backup_result
+  changed_when: true
+  timeout: "{{ pg_start_backup_delay_seconds | int + 300 }}"
+
+- name: 打印备份前置流程结果
+  ansible.builtin.debug:
+    msg:
+      - "备份标签: {{ pg_start_backup_label }}"
+      - "等待时长: {{ pg_start_backup_delay_seconds }}s"
+      - "输出: {{ _pg_start_backup_result.stdout_lines }}"

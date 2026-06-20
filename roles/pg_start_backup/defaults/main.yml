@@ -1,0 +1,15 @@
+---
+# PostgreSQL 物理备份前置流程默认值
+pg_start_backup_host: ""
+pg_start_backup_port: 5432
+pg_start_backup_database: "postgres"
+pg_start_backup_user: ""
+pg_start_backup_password: ""              # 应来自 vault
+pg_start_backup_ssl_enabled: false
+pg_start_backup_ssl_ca: ""
+pg_start_backup_mtls_enabled: false
+pg_start_backup_mtls_cert: ""
+pg_start_backup_mtls_key: ""
+pg_start_backup_label: "scheduled_backup"
+pg_start_backup_delay_seconds: 600         # 备份窗口时长，默认 10 分钟
+pg_start_backup_skip_vacuum: false         # 可跳过 VACUUM 节省时间
