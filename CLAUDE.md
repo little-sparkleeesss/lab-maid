@@ -132,6 +132,55 @@ Type：`feat` / `fix` / `docs` / `chore` / `refactor` / `test`
 | pre-commit | git commit 前自动检查 | `.pre-commit-config.yaml` |
 | GitHub Actions | push/PR 时 CI 检查 | `.github/workflows/lint.yml` |
 
+## Playbook 与主机组映射
+
+| Playbook | 目标组 | 说明 |
+|----------|--------|------|
+| `zfs-snapshot.yml` | `pve` | 需要 `become: true`，ZFS 操作需 root |
+| `smart-collect.yml` | `localhost` | smartctl 通过 `delegate_to` 到目标 |
+| `postgres-backup.yml` | `db` | pg_dumpall 在 DB 主机本地执行，需要 `become: true` |
+| `pg-start-backup.yml` | `db` | psql 单会话 backup_start/stop |
+| `traffic-sync.yml` | `vps` | sqlite3+psql 在源主机本地执行 |
+
+## 依赖项
+
+```yaml
+# requirements.yml
+collections:
+  - name: community.postgresql  # postgresql_query 模块
+```
+
+控制器端（仅 smart-collect 需要）：`pip install psycopg2-binary`
+
+## 实践经验
+
+### 时间戳：用 `date` 命令，不要用 `ansible_date_time`
+
+`ansible.cfg` 中 `fact_caching` 会缓存 facts，`ansible_date_time` 在缓存期内不更新。备份/快照的命名时间戳必须用 `command: date +%Y_%m_%d-%H%M%S`。
+
+### become 渗透
+
+Playbook 级别的 `become: true` 会渗透到 `delegate_to: localhost` 的任务。需要在这些任务上显式加 `become: false`。
+
+### zstd 覆盖
+
+`zstd -o` 不覆盖已有文件，需要加 `-f` 参数。配合 `creates:` 实现幂等。
+
+### Unix socket + peer 认证
+
+PG 的 `peer` 认证需要 OS 用户和 PG 用户同名。用 `localhost` TCP 连接走 `scram-sha-256` 密码认证更可靠。psql 会自动协商服务端支持的最高安全级别，无需角色代码改动。
+
+### ZFS 快照递归
+
+父数据集 `recursive: true` 的子快照是独立 ZFS 实体，逐个 `zfs destroy`（不带 `-r`）删除即可。重叠数据集在删除列表里用 `unique | sort` 去重。
+
+### Shell 可移植性
+
+目标机 `/bin/sh` 可能是 dash（Debian/Ubuntu），避免 bash 专有语法：
+- `10#08` → 用 `awk` 处理数字
+- `[-+]` 字符类 → 用 `case` 匹配
+- pipe 中的 `while` → subshell 吞变量，改用临时文件
+
 ## 扩展新功能的标准化流程
 
 添加新任务类型时按以下步骤，不修改已有代码：
