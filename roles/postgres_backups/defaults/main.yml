@@ -1,6 +1,6 @@
 ---
 # PostgreSQL 备份角色默认值
-postgres_backups_host: ""               # PG 主机（控制器通过 TCP 连接）
+postgres_backups_host: ""               # 留空=Unix socket，填 IP/域名=TCP
 postgres_backups_port: 5432
 postgres_backups_user: ""
 postgres_backups_password: ""           # 应来自 vault

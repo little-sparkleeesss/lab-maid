@@ -9,12 +9,14 @@
       zfs_snapshots_prefix 不能为空。
       拒绝执行以防止误删非本项目创建的快照。
 
-- name: 生成快照时间戳
+- name: 获取当前时间戳
+  ansible.builtin.command: date +%Y_%m_%d-%H%M%S
+  register: _zfs_ts_cmd
+  changed_when: false
+
+- name: 保存快照时间戳
   ansible.builtin.set_fact:
-    _zfs_snapshots_now_ts: "{{ _date ~ '-' ~ _time }}"
-  vars:
-    _date: "{{ ansible_date_time.date | replace('-', '_') }}"
-    _time: "{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+    _zfs_snapshots_now_ts: "{{ _zfs_ts_cmd.stdout | trim }}"
 
 - name: 创建 ZFS 快照
   ansible.builtin.command:

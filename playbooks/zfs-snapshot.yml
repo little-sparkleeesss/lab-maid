@@ -2,5 +2,6 @@
 - name: ZFS 定期快照
   hosts: pve
   gather_facts: true
+  become: true
   roles:
     - zfs_snapshots

@@ -1,13 +1,13 @@
 ---
-# PostgreSQL 备份 — pg_dumpall + zstd 压缩（在控制器上执行）
-# 架构匹配原始 Python：pg_dumpall 通过网络连远程 PG，管道在控制器本地压缩
+# PostgreSQL 备份 — pg_dumpall + 压缩（在 DB 主机本地执行）
+# pg_dumpall 导出全量（所有数据库+角色+表空间）→ 管道压缩为单个文件
+# 留空 host 使用 Unix socket 本地连接，填 host 则远程 TCP 连接
 
 - name: 验证必需配置
   ansible.builtin.assert:
     that:
       - postgres_backups_user | length > 0
-      - postgres_backups_host | length > 0
-    fail_msg: "postgres_backups_user / host 必须设置"
+    fail_msg: "postgres_backups_user 必须设置"
 
 - name: 检查 pg_dumpall 可用
   ansible.builtin.command: pg_dumpall --version
@@ -45,7 +45,7 @@
 - name: 配置压缩命令与扩展名
   ansible.builtin.set_fact:
     _compress_cmd: >-
-      {{ 'zstd -v -T0 --ultra -' ~ postgres_backups_zstd_level if _compressor == 'zstd'
+      {{ 'zstd -f -v -T0 --ultra -' ~ postgres_backups_zstd_level if _compressor == 'zstd'
          else 'gzip -' ~ postgres_backups_gzip_level if _compressor == 'gzip'
          else 'pigz -' ~ postgres_backups_gzip_level if _compressor == 'pigz'
          else 'xz -' ~ postgres_backups_xz_level ~ ' -T0' if _compressor == 'xz'
@@ -62,12 +62,14 @@
     state: directory
     mode: "0750"
 
-- name: 生成备份时间戳
+- name: 获取当前时间戳
+  ansible.builtin.command: date +%Y_%m_%d-%H%M%S
+  register: _pg_ts_cmd
+  changed_when: false
+
+- name: 保存备份时间戳
   ansible.builtin.set_fact:
-    _pg_backup_ts: "{{ _d ~ '_' ~ _t }}"
-  vars:
-    _d: "{{ ansible_date_time.date | replace('-', '') }}"
-    _t: "{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+    _pg_backup_ts: "{{ _pg_ts_cmd.stdout | trim }}"
 
 - name: 生成备份文件名
   ansible.builtin.set_fact:
@@ -77,15 +79,19 @@
     _pfx: "{{ postgres_backups_prefix }}"
 
 - name: 执行 pg_dumpall 备份
-  ansible.builtin.shell: |
-    set -o pipefail
-    pg_dumpall \
-      -h "{{ postgres_backups_host }}" \
-      -p "{{ postgres_backups_port }}" \
-      -U "{{ postgres_backups_user }}" \
-      --no-password \
-      | {{ _compress_cmd }} \
-        -o "{{ _pg_backup_file }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      pg_dumpall \
+        {% if postgres_backups_host | length > 0 %}\
+        -h "{{ postgres_backups_host }}" \
+        -p "{{ postgres_backups_port }}" \
+        {% endif %}\
+        -U "{{ postgres_backups_user }}" \
+        --no-password \
+        | {{ _compress_cmd }} \
+          -o "{{ _pg_backup_file }}"
+    creates: "{{ _pg_backup_file }}"
   environment:
     PGPASSWORD: "{{ postgres_backups_password }}"
     PGSSLMODE: "{{ 'verify-full' if postgres_backups_ssl_enabled else 'prefer' }}"
@@ -93,7 +99,6 @@
     PGSSLCERT: "{{ postgres_backups_ssl_cert | default('') }}"
     PGSSLKEY: "{{ postgres_backups_ssl_key | default('') }}"
   register: _pg_backup_result
-  changed_when: true
 
 - name: 获取备份文件大小
   ansible.builtin.stat:
@@ -118,42 +123,61 @@
           - postgres_backups_nas_host is match('^[a-zA-Z0-9][a-zA-Z0-9.-]+$')
         fail_msg: "NAS 推送已启用但 postgres_backups_nas_* 配置不完整或格式错误"
 
+    - name: 配置暂存路径
+      ansible.builtin.set_fact:
+        _nas_stage: "{{ lookup('env', 'HOME') }}/.cache/lab-maid/stage"
+        _nas_dst: "{{ _du }}@{{ _dh }}:{{ _dd }}/"
+      vars:
+        _du: "{{ postgres_backups_nas_user }}"
+        _dh: "{{ postgres_backups_nas_host }}"
+        _dd: "{{ postgres_backups_nas_remote_dir }}"
+
+    - name: 创建安全的暂存目录
+      ansible.builtin.file:
+        path: "{{ _nas_stage }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+
+    - name: 拉取备份到暂存目录
+      ansible.builtin.fetch:
+        src: "{{ _pg_backup_file }}"
+        dest: "{{ _nas_stage }}/"
+        flat: true
+
     - name: 创建 NAS 主机密钥文件
       ansible.builtin.copy:
         content: "{{ postgres_backups_nas_host_key }}\n"
-        dest: /tmp/pg_nas_known_hosts
+        dest: "{{ _nas_stage }}/known_hosts"
         mode: "0600"
-
-    - name: 构建 NAS 推送参数
-      ansible.builtin.set_fact:
-        _nas_ssh: >-
-          ssh
-          -p {{ postgres_backups_nas_port }}{%- if postgres_backups_nas_private_key | length > 0 %}
-          -i {{ postgres_backups_nas_private_key }}{% endif %}
-          -o StrictHostKeyChecking=yes
-          -o UserKnownHostsFile=/tmp/pg_nas_known_hosts
-        _nas_dst: "{{ _u }}@{{ _h }}:{{ _d }}/"
-      vars:
-        _u: "{{ postgres_backups_nas_user }}"
-        _h: "{{ postgres_backups_nas_host }}"
-        _d: "{{ postgres_backups_nas_remote_dir }}"
+      delegate_to: localhost
 
     - name: 推送至 NAS
       ansible.builtin.shell: |
         set -o pipefail
-        rsync -azP \
-          -e {{ _nas_ssh | quote }} \
-          {{ _pg_backup_file | quote }} \
+        scp -q \
+          -P {{ postgres_backups_nas_port | quote }}{%- if postgres_backups_nas_private_key | length > 0 %}
+          -i {{ postgres_backups_nas_private_key | quote }}{%- endif %}
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile={{ _nas_stage | quote }}/known_hosts \
+          {{ _nas_file | quote }} \
           {{ _nas_dst | quote }}
+      vars:
+        _nas_file: "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
+      delegate_to: localhost
       register: _pg_nas_push
       changed_when: true
 
-    - name: 清理 NAS 密钥文件
+    - name: 清理控制器暂存文件
       ansible.builtin.file:
-        path: /tmp/pg_nas_known_hosts
+        path: "{{ item }}"
         state: absent
+      loop:
+        - "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
+        - "{{ _nas_stage }}/known_hosts"
+      delegate_to: localhost
 
-    - name: 删除本地备份（已推送至 NAS）
+    - name: 删除 DB 主机本地备份（已推送至 NAS）
       ansible.builtin.file:
         path: "{{ _pg_backup_file }}"
         state: absent

@@ -14,6 +14,7 @@ group_vars/all/vault.yml
 
 # Ansible 工具链缓存
 .ansible/
+.cache/
 
 # uv / Python
 __pycache__/
