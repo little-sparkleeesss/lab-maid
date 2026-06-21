@@ -69,9 +69,13 @@
 - name: 删除过期快照
   ansible.builtin.command:
     cmd: "zfs destroy {{ item }}"
-  loop: "{{ _zfs_snapshots_expired.stdout_lines }}"
+  loop: "{{ _zfs_snapshots_expired.stdout_lines | unique | sort }}"
   when: _zfs_snapshots_expired.stdout_lines | length > 0
   changed_when: true
+  failed_when:
+    - _zfs_destroy.rc != 0
+    - "'could not find any snapshots' not in _zfs_destroy.stderr"
+  register: _zfs_destroy
 
 - name: 打印任务摘要
   ansible.builtin.debug:

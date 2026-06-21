@@ -17,20 +17,23 @@
 - name: 检查目标主机 smartctl 可用
   ansible.builtin.command: smartctl --version
   delegate_to: "{{ smart_monitoring_target }}"
+  become: true
   changed_when: false
 
 - name: 采集各磁盘 SMART 数据
   ansible.builtin.command:
     cmd: smartctl -a -j {{ item }}
   delegate_to: "{{ smart_monitoring_target }}"
+  become: true
   register: _smart_raw
   loop: "{{ smart_monitoring_drives }}"
   changed_when: false
   failed_when:
-    - _smart_raw.rc != 0
+    - _smart_raw.rc == 1 or _smart_raw.rc == 2
     - >-
-      'No such file' not in _smart_raw.stderr | default('')
-      and 'Permission denied' not in _smart_raw.stderr | default('')
+      'Permission denied' in _smart_raw.stderr | default('')
+    - >-
+      _smart_raw.stdout | default('') | length == 0
   timeout: "{{ smart_monitoring_command_timeout }}"
 
 - name: 解析 SMART JSON 数据
@@ -83,18 +86,15 @@
     query: >
       INSERT INTO {{ smart_monitoring_pg_table }}
         (host, device, serial, model, device_type, smart_status_passed, smartctl_json)
-      VALUES (
-        %(host)s, %(device)s, %(serial)s, %(model)s,
-        %(device_type)s, %(status)s, %(raw_json)s
-      );
+      VALUES (%s, %s, %s, %s, %s, %s, %s);
     positional_args:
-      - host: "{{ smart_monitoring_target }}"
-        device: "{{ item.device }}"
-        serial: "{{ item.serial }}"
-        model: "{{ item.model }}"
-        device_type: "{{ item.device_type }}"
-        status: "{{ item.smart_status }}"
-        raw_json: "{{ item.raw_json }}"
+      - "{{ smart_monitoring_target }}"
+      - "{{ item.device }}"
+      - "{{ item.serial }}"
+      - "{{ item.model }}"
+      - "{{ item.device_type }}"
+      - "{{ item.smart_status }}"
+      - "{{ item.raw_json }}"
   loop: "{{ _smart_rows }}"
   delegate_to: localhost
   register: _insert

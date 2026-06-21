@@ -138,6 +138,7 @@
         state: directory
         mode: "0700"
       delegate_to: localhost
+      become: false
 
     - name: 拉取备份到暂存目录
       ansible.builtin.fetch:
@@ -151,6 +152,7 @@
         dest: "{{ _nas_stage }}/known_hosts"
         mode: "0600"
       delegate_to: localhost
+      become: false
 
     - name: 推送至 NAS
       ansible.builtin.shell: |
@@ -165,6 +167,7 @@
       vars:
         _nas_file: "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
       delegate_to: localhost
+      become: false
       register: _pg_nas_push
       changed_when: true
 
@@ -176,6 +179,7 @@
         - "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
         - "{{ _nas_stage }}/known_hosts"
       delegate_to: localhost
+      become: false
 
     - name: 删除 DB 主机本地备份（已推送至 NAS）
       ansible.builtin.file:
