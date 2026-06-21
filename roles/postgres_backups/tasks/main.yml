@@ -11,11 +11,11 @@
 
 - name: 检查 pg_dumpall 可用
   ansible.builtin.command: pg_dumpall --version
-  register: _pg_dumpall_check
+  register: _postgres_backups_pg_check
   changed_when: false
   failed_when:
-    - _pg_dumpall_check.rc != 0
-    - _pg_dumpall_check.rc != 1
+    - _postgres_backups_pg_check.rc != 0
+    - _postgres_backups_pg_check.rc != 1
 
 - name: 检测可用的压缩工具
   ansible.builtin.shell: |
@@ -24,36 +24,36 @@
     elif command -v xz >/dev/null 2>&1; then echo "xz"
     elif command -v pigz >/dev/null 2>&1; then echo "pigz"
     else echo "none"; fi
-  register: _compressor_detect
+  register: _postgres_backups_comp_detect
   changed_when: false
 
 - name: 确定压缩方式
   ansible.builtin.set_fact:
-    _compressor: >-
+    _postgres_backups_comp: >-
       {{ 'none' if postgres_backups_compression == 'none'
          else postgres_backups_compression if postgres_backups_compression != 'auto'
-         else _compressor_detect.stdout }}
+         else _postgres_backups_comp_detect.stdout }}
 
 - name: 确认压缩工具可用
   ansible.builtin.assert:
     that:
-      - _compressor != 'none' or postgres_backups_compression == 'none'
+      - _postgres_backups_comp != 'none' or postgres_backups_compression == 'none'
     fail_msg: >
       未找到任何压缩工具 (zstd/gzip/xz/pigz)，且 compression 未设为 'none'。
       请安装任一压缩工具，或将 postgres_backups_compression 设为 'none'。
 
 - name: 配置压缩命令与扩展名
   ansible.builtin.set_fact:
-    _compress_cmd: >-
-      {{ 'zstd -f -v -T0 --ultra -' ~ postgres_backups_zstd_level if _compressor == 'zstd'
-         else 'gzip -' ~ postgres_backups_gzip_level if _compressor == 'gzip'
-         else 'pigz -' ~ postgres_backups_gzip_level if _compressor == 'pigz'
-         else 'xz -' ~ postgres_backups_xz_level ~ ' -T0' if _compressor == 'xz'
+    _postgres_backups_compress_cmd: >-
+      {{ 'zstd -f -v -T0 --ultra -' ~ postgres_backups_zstd_level if _postgres_backups_comp == 'zstd'
+         else 'gzip -' ~ postgres_backups_gzip_level if _postgres_backups_comp == 'gzip'
+         else 'pigz -' ~ postgres_backups_gzip_level if _postgres_backups_comp == 'pigz'
+         else 'xz -' ~ postgres_backups_xz_level ~ ' -T0' if _postgres_backups_comp == 'xz'
          else 'cat' }}
-    _compress_ext: >-
-      {{ '.zst' if _compressor == 'zstd'
-         else '.gz' if _compressor in ['gzip', 'pigz']
-         else '.xz' if _compressor == 'xz'
+    _postgres_backups_compress_ext: >-
+      {{ '.zst' if _postgres_backups_comp == 'zstd'
+         else '.gz' if _postgres_backups_comp in ['gzip', 'pigz']
+         else '.xz' if _postgres_backups_comp == 'xz'
          else '' }}
 
 - name: 确保备份目录存在
@@ -64,19 +64,19 @@
 
 - name: 获取当前时间戳
   ansible.builtin.command: date +%Y_%m_%d-%H%M%S
-  register: _pg_ts_cmd
+  register: _postgres_backups_ts_cmd
   changed_when: false
 
 - name: 保存备份时间戳
   ansible.builtin.set_fact:
-    _pg_backup_ts: "{{ _pg_ts_cmd.stdout | trim }}"
+    _postgres_backups_ts: "{{ _postgres_backups_ts_cmd.stdout | trim }}"
 
 - name: 生成备份文件名
   ansible.builtin.set_fact:
-    _pg_backup_file: "{{ _dir ~ '/' ~ _pfx ~ '_' ~ _pg_backup_ts ~ '.sql' ~ _compress_ext }}"
+    _postgres_backups_file: "{{ _d ~ '/' ~ _p ~ '_' ~ _postgres_backups_ts ~ '.sql' ~ _postgres_backups_compress_ext }}"
   vars:
-    _dir: "{{ postgres_backups_local_dir }}"
-    _pfx: "{{ postgres_backups_prefix }}"
+    _d: "{{ postgres_backups_local_dir }}"
+    _p: "{{ postgres_backups_prefix }}"
 
 - name: 执行 pg_dumpall 备份
   ansible.builtin.shell:
@@ -89,21 +89,21 @@
         {% endif %}\
         -U "{{ postgres_backups_user }}" \
         --no-password \
-        | {{ _compress_cmd }} \
-          -o "{{ _pg_backup_file }}"
-    creates: "{{ _pg_backup_file }}"
+        | {{ _postgres_backups_compress_cmd }} \
+          -o "{{ _postgres_backups_file }}"
+    creates: "{{ _postgres_backups_file }}"
   environment:
     PGPASSWORD: "{{ postgres_backups_password }}"
     PGSSLMODE: "{{ 'verify-full' if postgres_backups_ssl_enabled else 'prefer' }}"
     PGSSLROOTCERT: "{{ postgres_backups_ssl_ca | default('') }}"
     PGSSLCERT: "{{ postgres_backups_ssl_cert | default('') }}"
     PGSSLKEY: "{{ postgres_backups_ssl_key | default('') }}"
-  register: _pg_backup_result
+  register: _postgres_backups_result
 
 - name: 获取备份文件大小
   ansible.builtin.stat:
-    path: "{{ _pg_backup_file }}"
-  register: _pg_backup_stat
+    path: "{{ _postgres_backups_file }}"
+  register: _postgres_backups_stat
 
 # --- NAS 推送 ---
 
@@ -125,8 +125,8 @@
 
     - name: 配置暂存路径
       ansible.builtin.set_fact:
-        _nas_stage: "{{ lookup('env', 'HOME') }}/.cache/lab-maid/stage"
-        _nas_dst: "{{ _du }}@{{ _dh }}:{{ _dd }}/"
+        _postgres_backups_nas_stage: "{{ lookup('env', 'HOME') }}/.cache/lab-maid/stage"
+        _postgres_backups_nas_dst: "{{ _du }}@{{ _dh }}:{{ _dd }}/"
       vars:
         _du: "{{ postgres_backups_nas_user }}"
         _dh: "{{ postgres_backups_nas_host }}"
@@ -134,7 +134,7 @@
 
     - name: 创建安全的暂存目录
       ansible.builtin.file:
-        path: "{{ _nas_stage }}"
+        path: "{{ _postgres_backups_nas_stage }}"
         state: directory
         mode: "0700"
       delegate_to: localhost
@@ -142,14 +142,14 @@
 
     - name: 拉取备份到暂存目录
       ansible.builtin.fetch:
-        src: "{{ _pg_backup_file }}"
-        dest: "{{ _nas_stage }}/"
+        src: "{{ _postgres_backups_file }}"
+        dest: "{{ _postgres_backups_nas_stage }}/"
         flat: true
 
     - name: 创建 NAS 主机密钥文件
       ansible.builtin.copy:
         content: "{{ postgres_backups_nas_host_key }}\n"
-        dest: "{{ _nas_stage }}/known_hosts"
+        dest: "{{ _postgres_backups_nas_stage }}/known_hosts"
         mode: "0600"
       delegate_to: localhost
       become: false
@@ -161,14 +161,14 @@
           -P {{ postgres_backups_nas_port | quote }}{%- if postgres_backups_nas_private_key | length > 0 %}
           -i {{ postgres_backups_nas_private_key | quote }}{%- endif %}
           -o StrictHostKeyChecking=yes \
-          -o UserKnownHostsFile={{ _nas_stage | quote }}/known_hosts \
+          -o UserKnownHostsFile={{ _postgres_backups_nas_stage | quote }}/known_hosts \
           {{ _nas_file | quote }} \
-          {{ _nas_dst | quote }}
+          {{ _postgres_backups_nas_dst | quote }}
       vars:
-        _nas_file: "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
+        _nas_file: "{{ _postgres_backups_nas_stage }}/{{ _postgres_backups_file | basename }}"
       delegate_to: localhost
       become: false
-      register: _pg_nas_push
+      register: _postgres_backups_nas_push
       changed_when: true
 
     - name: 清理控制器暂存文件
@@ -176,14 +176,14 @@
         path: "{{ item }}"
         state: absent
       loop:
-        - "{{ _nas_stage }}/{{ _pg_backup_file | basename }}"
-        - "{{ _nas_stage }}/known_hosts"
+        - "{{ _postgres_backups_nas_stage }}/{{ _postgres_backups_file | basename }}"
+        - "{{ _postgres_backups_nas_stage }}/known_hosts"
       delegate_to: localhost
       become: false
 
     - name: 删除 DB 主机本地备份（已推送至 NAS）
       ansible.builtin.file:
-        path: "{{ _pg_backup_file }}"
+        path: "{{ _postgres_backups_file }}"
         state: absent
 
 - name: 查找过期备份文件
@@ -193,7 +193,7 @@
     age: "{{ postgres_backups_retention_days }}d"
     age_stamp: mtime
     file_type: file
-  register: _pg_expired_files
+  register: _postgres_backups_expired
   changed_when: false
   when: not (postgres_backups_nas_enabled | default(false))
   # 如果已推送到 NAS，本地文件已被删除，无需清理
@@ -201,30 +201,30 @@
 - name: 检查过期备份数量安全性
   ansible.builtin.assert:
     that:
-      - _pg_expired_files.files | length <= postgres_backups_max_deletions
+      - _postgres_backups_expired.files | length <= postgres_backups_max_deletions
     fail_msg: >
-      待删除备份数量 ({{ _pg_expired_files.files | length }})
+      待删除备份数量 ({{ _postgres_backups_expired.files | length }})
       超过安全上限 ({{ postgres_backups_max_deletions }})，拒绝执行。
       请检查 retention_days 或手动清理。
   when:
     - not (postgres_backups_nas_enabled | default(false))
-    - _pg_expired_files.files | length > 0
+    - _postgres_backups_expired.files | length > 0
 
 - name: 删除过期备份
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent
-  loop: "{{ _pg_expired_files.files }}"
+  loop: "{{ _postgres_backups_expired.files }}"
   when:
     - not (postgres_backups_nas_enabled | default(false))
-    - _pg_expired_files.files | length > 0
+    - _postgres_backups_expired.files | length > 0
 
 - name: 打印备份摘要
   ansible.builtin.debug:
     msg:
-      - "备份文件: {{ _pg_backup_file }}"
-      - "备份大小: {{ (_pg_backup_stat.stat.size | default(0) | int / 1048576) | round(1) }} MiB"
+      - "备份文件: {{ _postgres_backups_file }}"
+      - "备份大小: {{ (_postgres_backups_stat.stat.size | default(0) | int / 1048576) | round(1) }} MiB"
       - >-
         {{ '已推送至 NAS: ' ~ postgres_backups_nas_host
            if (postgres_backups_nas_enabled | default(false))
-           else '已删除 ' ~ (_pg_expired_files.files | default([]) | length) ~ ' 个过期备份' }}
+           else '已删除 ' ~ (_postgres_backups_expired.files | default([]) | length) ~ ' 个过期备份' }}

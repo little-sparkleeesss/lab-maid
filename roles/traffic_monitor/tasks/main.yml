@@ -143,10 +143,18 @@
       {%- endif -%}{% if not loop.last %}, {% endif %}
       {%- endfor -%}
 
+- name: 解析同步计数
+  ansible.builtin.set_fact:
+    _synced_count: >-
+      {{ _traffic_sync.stderr_lines
+         | select('match', '^synced=')
+         | map('regex_replace', 'synced=', '')
+         | first | default('0') }}
+
 - name: 打印同步摘要
   ansible.builtin.debug:
     msg:
       - "源主机时区: {{ _tz_out.stdout }}"
       - "源文件: {{ traffic_monitor_source_path }}"
       - "同步目标: {{ traffic_monitor_pg_table }}"
-      - "新记录: {{ _traffic_sync.stderr_lines | select('match', '^synced=') | map('regex_replace', 'synced=', '') | first | default('0') }}"
+      - "新记录: {{ _synced_count }}"
