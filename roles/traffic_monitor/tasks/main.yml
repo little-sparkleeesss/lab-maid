@@ -88,12 +88,17 @@
 
     sqlite3 -separator '|' \
       "{{ traffic_monitor_source_path }}" \
-      "SELECT {{ traffic_monitor_columns | join(', ') }}
+      "{% if traffic_monitor_interface_filter | default('') | length > 0 %}
+       SELECT h.id, h.interface, h.date, h.rx, h.tx
+       FROM {{ traffic_monitor_sqlite_table }} h
+       JOIN interface i ON h.interface = i.id
+       WHERE i.name = '{{ traffic_monitor_interface_filter }}'
+       ORDER BY h.date ASC
+       {% else %}
+       SELECT {{ traffic_monitor_columns | join(', ') }}
        FROM {{ traffic_monitor_sqlite_table }}
-       {% if traffic_monitor_interface_filter | default('') | length > 0 %}
-       WHERE interface = '{{ traffic_monitor_interface_filter }}'
-       {% endif %}
-       ORDER BY date ASC" \
+       ORDER BY date ASC
+       {% endif %}" \
       > "$tmp_sql.raw"
 
     while IFS='|' read -r {{ traffic_monitor_columns | join(' ') }}; do
