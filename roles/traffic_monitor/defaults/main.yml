@@ -16,4 +16,5 @@ traffic_monitor_columns:                   # SQLite 列名列表
   - rx
   - tx
 traffic_monitor_column_mapping: {}         # SQLite→PG 列名映射，如 {date: "timestamp"}
+traffic_monitor_interface_filter: ""         # 只同步指定接口的流量，避免 Docker/veth/lo 干扰
 traffic_monitor_local_db: /tmp/vnstat.db   # 本地暂存路径

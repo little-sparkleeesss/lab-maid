@@ -90,6 +90,9 @@
       "{{ traffic_monitor_source_path }}" \
       "SELECT {{ traffic_monitor_columns | join(', ') }}
        FROM {{ traffic_monitor_sqlite_table }}
+       {% if traffic_monitor_interface_filter | default('') | length > 0 %}
+       WHERE interface = '{{ traffic_monitor_interface_filter }}'
+       {% endif %}
        ORDER BY date ASC" \
       > "$tmp_sql.raw"
 

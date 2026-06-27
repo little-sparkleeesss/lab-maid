@@ -8,3 +8,4 @@
 
 # 流量监控 — VPS 上的 vnstat SQLite 路径
 traffic_monitor_source_path: /var/lib/vnstat/vnstat.db
+traffic_monitor_interface_filter: "ens3"   # 只同步外网接口，避免 Docker/lo 等
